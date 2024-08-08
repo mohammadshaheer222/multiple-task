@@ -1,16 +1,10 @@
-import React, { useState, useRef } from 'react';
-import ReactCrop, {
-  centerCrop,
-  makeAspectCrop,
-  convertToPixelCrop,
-} from 'react-image-crop';
+import React, { useState, useRef, useEffect } from 'react';
+import ReactCrop, { centerCrop, makeAspectCrop, convertToPixelCrop } from 'react-image-crop';
 import { canvasPreview } from './canvasPreview';
 import { useDebounceEffect } from './useDebounceEffect';
-
 import 'react-image-crop/dist/ReactCrop.css';
 
-// This is to demonstrate how to make and center a % aspect crop
-// which is a bit trickier so we use some helper functions.
+// Function to center the aspect crop
 function centerAspectCrop(mediaWidth, mediaHeight, aspect) {
   return centerCrop(
     makeAspectCrop(
@@ -20,289 +14,51 @@ function centerAspectCrop(mediaWidth, mediaHeight, aspect) {
       },
       aspect,
       mediaWidth,
-      mediaHeight,
+      mediaHeight
     ),
     mediaWidth,
-    mediaHeight,
+    mediaHeight
   );
 }
 
 export default function App() {
-  const [imgSrc, setImgSrc] = useState('');
+  const [imgSrc, setImgSrc] = useState('https://letsenhance.io/static/73136da51c245e80edc6ccfe44888a99/1015f/MainBefore.jpg'); // Set your static photo URL here
+  const [croppedImage, setCroppedImage] = useState('');
   const previewCanvasRef = useRef(null);
   const imgRef = useRef(null);
-  const blobUrlRef = useRef('');
-  const [crop, setCrop] = useState(null);
-  const [completedCrop, setCompletedCrop] = useState(null);
+  const [crop, setCrop] = useState();
+  const [completedCrop, setCompletedCrop] = useState();
   const [scale, setScale] = useState(1);
   const [rotate, setRotate] = useState(0);
   const [aspect, setAspect] = useState(16 / 9);
-  const [croppedImgUrl, setCroppedImgUrl] = useState('');
 
-  function onSelectFile(e) {
-    if (e.target.files && e.target.files.length > 0) {
-      setCrop(null); // Makes crop preview update between images.
-      const reader = new FileReader();
-      reader.addEventListener('load', () =>
-        setImgSrc(reader.result?.toString() || ''),
-      );
-      reader.readAsDataURL(e.target.files[0]);
-    }
-  }
-
-  function onImageLoad(e) {
-    if (aspect) {
-      const { width, height } = e.currentTarget;
+  useEffect(() => {
+    // When image is loaded, set the crop
+    if (aspect && imgRef.current) {
+      const { width, height } = imgRef.current;
       setCrop(centerAspectCrop(width, height, aspect));
     }
-  }
+  }, [imgSrc, aspect]);
 
-  async function generateCroppedImage() {
-    const image = imgRef.current;
-    const previewCanvas = previewCanvasRef.current;
-    if (!image || !previewCanvas || !completedCrop) {
-      return;
-    }
-
-    // This will size relative to the uploaded image size.
-    // If you want to size according to what they are looking at on screen, remove scaleX + scaleY
-    const scaleX = image.naturalWidth / image.width;
-    const scaleY = image.naturalHeight / image.height;
-
-    const offscreen = new OffscreenCanvas(
-      completedCrop.width * scaleX,
-      completedCrop.height * scaleY,
-    );
-    const ctx = offscreen.getContext('2d');
-    if (!ctx) {
-      return;
-    }
-
-    ctx.drawImage(
-      previewCanvas,
-      0,
-      0,
-      previewCanvas.width,
-      previewCanvas.height,
-      0,
-      0,
-      offscreen.width,
-      offscreen.height,
-    );
-
-    // You might want { type: "image/jpeg", quality: <0 to 1> } to reduce image size
-    const blob = await offscreen.convertToBlob({
-      type: 'image/png',
-    });
-
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
-    }
-    blobUrlRef.current = URL.createObjectURL(blob);
-
-    // Set the new state with the cropped image URL
-    setCroppedImgUrl(blobUrlRef.current);
-  }
-
-  useDebounceEffect(
-    async () => {
-      if (
-        completedCrop?.width &&
-        completedCrop?.height &&
-        imgRef.current &&
-        previewCanvasRef.current
-      ) {
-        // We use canvasPreview as it's much faster than imgPreview.
-        canvasPreview(
-          imgRef.current,
-          previewCanvasRef.current,
-          completedCrop,
-          scale,
-          rotate,
-        );
-
-        // Generate and set the cropped image URL
-        await generateCroppedImage();
-      }
-    },
-    100,
-    [completedCrop, scale, rotate],
-  );
-
-  function handleToggleAspectClick() {
-    if (aspect) {
-      setAspect(undefined);
-    } else {
-      setAspect(16 / 9);
-
-      if (imgRef.current) {
-        const { width, height } = imgRef.current;
-        const newCrop = centerAspectCrop(width, height, 16 / 9);
-        setCrop(newCrop);
-        // Updates the preview
-        setCompletedCrop(convertToPixelCrop(newCrop, width, height));
-      }
-    }
-  }
-
-  return (
-    <div className="App">
-      <div className="Crop-Controls">
-        <input type="file" accept="image/*" onChange={onSelectFile} />
-        <div>
-          <label htmlFor="scale-input">Scale: </label>
-          <input
-            id="scale-input"
-            type="number"
-            step="0.1"
-            value={scale}
-            disabled={!imgSrc}
-            onChange={(e) => setScale(Number(e.target.value))}
-          />
-        </div>
-        <div>
-          <label htmlFor="rotate-input">Rotate: </label>
-          <input
-            id="rotate-input"
-            type="number"
-            value={rotate}
-            disabled={!imgSrc}
-            onChange={(e) =>
-              setRotate(Math.min(180, Math.max(-180, Number(e.target.value))))
-            }
-          />
-        </div>
-        <div>
-          <button onClick={handleToggleAspectClick}>
-            Toggle aspect {aspect ? 'off' : 'on'}
-          </button>
-        </div>
-      </div>
-      {!!imgSrc && (
-        <ReactCrop
-          crop={crop}
-          onChange={(_, percentCrop) => setCrop(percentCrop)}
-          onComplete={(c) => setCompletedCrop(c)}
-          aspect={aspect}
-        >
-          <img
-            ref={imgRef}
-            alt="Crop me"
-            src={imgSrc}
-            style={{ transform: `scale(${scale}) rotate(${rotate}deg)` }}
-            onLoad={onImageLoad}
-          />
-        </ReactCrop>
-      )}
-      {!!completedCrop && (
-        <>
-          <div>
-            <canvas
-              ref={previewCanvasRef}
-              style={{
-                border: '1px solid black',
-                objectFit: 'contain',
-                width: completedCrop.width,
-                height: completedCrop.height,
-              }}
-            />
-          </div>
-          {croppedImgUrl && (
-            <div>
-              <h3>Cropped Image:</h3>
-              <img src={croppedImgUrl} alt="Cropped" />
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-
-//with download button
-
-import React, { useState, useRef } from 'react';
-import ReactCrop, {
-  centerCrop,
-  makeAspectCrop,
-  convertToPixelCrop,
-} from 'react-image-crop';
-import { canvasPreview } from './canvasPreview';
-import { useDebounceEffect } from './useDebounceEffect';
-
-import 'react-image-crop/dist/ReactCrop.css';
-
-// This is to demonstrate how to make and center a % aspect crop
-// which is a bit trickier so we use some helper functions.
-function centerAspectCrop(mediaWidth, mediaHeight, aspect) {
-  return centerCrop(
-    makeAspectCrop(
-      {
-        unit: '%',
-        width: 90,
-      },
-      aspect,
-      mediaWidth,
-      mediaHeight,
-    ),
-    mediaWidth,
-    mediaHeight,
-  );
-}
-
-export default function App() {
-  const [imgSrc, setImgSrc] = useState('');
-  const previewCanvasRef = useRef(null);
-  const imgRef = useRef(null);
-  const hiddenAnchorRef = useRef(null);
-  const blobUrlRef = useRef('');
-  const [crop, setCrop] = useState(null);
-  const [completedCrop, setCompletedCrop] = useState(null);
-  const [scale, setScale] = useState(1);
-  const [rotate, setRotate] = useState(0);
-  const [aspect, setAspect] = useState(16 / 9);
-  const [croppedImgUrl, setCroppedImgUrl] = useState('');
-
-  function onSelectFile(e) {
-    if (e.target.files && e.target.files.length > 0) {
-      setCrop(null); // Makes crop preview update between images.
-      const reader = new FileReader();
-      reader.addEventListener('load', () =>
-        setImgSrc(reader.result?.toString() || ''),
-      );
-      reader.readAsDataURL(e.target.files[0]);
-    }
-  }
-
-  function onImageLoad(e) {
-    if (aspect) {
-      const { width, height } = e.currentTarget;
-      setCrop(centerAspectCrop(width, height, aspect));
-    }
-  }
-
-  async function onDownloadCropClick() {
+  async function onCropClick() {
     const image = imgRef.current;
     const previewCanvas = previewCanvasRef.current;
     if (!image || !previewCanvas || !completedCrop) {
       throw new Error('Crop canvas does not exist');
     }
-
-    // This will size relative to the uploaded image size.
-    // If you want to size according to what they are looking at on screen, remove scaleX + scaleY
+  
     const scaleX = image.naturalWidth / image.width;
     const scaleY = image.naturalHeight / image.height;
-
-    const offscreen = new OffscreenCanvas(
-      completedCrop.width * scaleX,
-      completedCrop.height * scaleY,
-    );
-    const ctx = offscreen.getContext('2d');
+  
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
     if (!ctx) {
       throw new Error('No 2d context');
     }
-
+  
+    canvas.width = completedCrop.width * scaleX;
+    canvas.height = completedCrop.height * scaleY;
+  
     ctx.drawImage(
       previewCanvas,
       0,
@@ -311,48 +67,38 @@ export default function App() {
       previewCanvas.height,
       0,
       0,
-      offscreen.width,
-      offscreen.height,
+      canvas.width,
+      canvas.height
     );
-    // You might want { type: "image/jpeg", quality: <0 to 1> } to reduce image size
-    const blob = await offscreen.convertToBlob({
-      type: 'image/png',
+  
+    // Ensure the canvas is not tainted
+    const blob = await new Promise((resolve) => {
+      canvas.toBlob(resolve, 'image/png');
     });
-
-    if (blobUrlRef.current) {
-      URL.revokeObjectURL(blobUrlRef.current);
+  
+    if (blob) {
+      const croppedImageUrl = URL.createObjectURL(blob);
+      setCroppedImage(croppedImageUrl);
     }
-    blobUrlRef.current = URL.createObjectURL(blob);
-
-    if (hiddenAnchorRef.current) {
-      hiddenAnchorRef.current.href = blobUrlRef.current;
-      hiddenAnchorRef.current.click();
-    }
-
-    // Set the new state with the cropped image URL
-    setCroppedImgUrl(blobUrlRef.current);
   }
+  
+  
+  
 
   useDebounceEffect(
     async () => {
-      if (
-        completedCrop?.width &&
-        completedCrop?.height &&
-        imgRef.current &&
-        previewCanvasRef.current
-      ) {
-        // We use canvasPreview as it's much faster than imgPreview.
+      if (completedCrop?.width && completedCrop?.height && imgRef.current && previewCanvasRef.current) {
         canvasPreview(
           imgRef.current,
           previewCanvasRef.current,
           completedCrop,
           scale,
-          rotate,
+          rotate
         );
       }
     },
     100,
-    [completedCrop, scale, rotate],
+    [completedCrop, scale, rotate]
   );
 
   function handleToggleAspectClick() {
@@ -365,7 +111,6 @@ export default function App() {
         const { width, height } = imgRef.current;
         const newCrop = centerAspectCrop(width, height, 16 / 9);
         setCrop(newCrop);
-        // Updates the preview
         setCompletedCrop(convertToPixelCrop(newCrop, width, height));
       }
     }
@@ -374,7 +119,7 @@ export default function App() {
   return (
     <div className="App">
       <div className="Crop-Controls">
-        <input type="file" accept="image/*" onChange={onSelectFile} />
+        {/* Removed file input */}
         <div>
           <label htmlFor="scale-input">Scale: </label>
           <input
@@ -393,15 +138,16 @@ export default function App() {
             type="number"
             value={rotate}
             disabled={!imgSrc}
-            onChange={(e) =>
-              setRotate(Math.min(180, Math.max(-180, Number(e.target.value))))
-            }
+            onChange={(e) => setRotate(Math.min(180, Math.max(-180, Number(e.target.value))))}
           />
         </div>
         <div>
           <button onClick={handleToggleAspectClick}>
             Toggle aspect {aspect ? 'off' : 'on'}
           </button>
+        </div>
+        <div>
+          <button onClick={onCropClick}>Crop</button>
         </div>
       </div>
       {!!imgSrc && (
@@ -410,13 +156,13 @@ export default function App() {
           onChange={(_, percentCrop) => setCrop(percentCrop)}
           onComplete={(c) => setCompletedCrop(c)}
           aspect={aspect}
+          minHeight={100}
         >
           <img
             ref={imgRef}
             alt="Crop me"
             src={imgSrc}
             style={{ transform: `scale(${scale}) rotate(${rotate}deg)` }}
-            onLoad={onImageLoad}
           />
         </ReactCrop>
       )}
@@ -429,35 +175,13 @@ export default function App() {
                 border: '1px solid black',
                 objectFit: 'contain',
                 width: completedCrop.width,
-                height: completedCrop.height,
+                height: completedCrop.height
               }}
             />
           </div>
           <div>
-            <button onClick={onDownloadCropClick}>Download Crop</button>
-            <div style={{ fontSize: 12, color: '#666' }}>
-              If you get a security error when downloading try opening the
-              Preview in a new tab (icon near top right).
-            </div>
-            <a
-              href="#hidden"
-              ref={hiddenAnchorRef}
-              download
-              style={{
-                position: 'absolute',
-                top: '-200vh',
-                visibility: 'hidden',
-              }}
-            >
-              Hidden download
-            </a>
+            {croppedImage && <img src={croppedImage} alt="Cropped Preview" />}
           </div>
-          {croppedImgUrl && (
-            <div>
-              <h3>Cropped Image:</h3>
-              <img src={croppedImgUrl} alt="Cropped" />
-            </div>
-          )}
         </>
       )}
     </div>
